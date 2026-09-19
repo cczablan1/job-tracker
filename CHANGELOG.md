@@ -2,6 +2,14 @@
 
 This project uses version tags so a known working release can be restored if a later change causes a problem.
 
+## 1.1.1 — 2026-09-19
+
+- Parse written-out application deadlines and preserve the advertised time/timezone in notes.
+- Extract prose headings and flexible start dates; identify ETH organization/location with an explicit inference notice.
+- Read multiline salary progression, select the first-year amount, and preserve later-year figures without labelling them net pay.
+- Add ETH posting hosts to the function defaults. Existing deployments can enable these through EXTRA_POSTING_HOSTS without replacing function code.
+- Add regression tests for prose, flattened text, dates, and host validation.
+
 ## 1.1.0 — 2026-09-19
 
 - Review extracted job fields from pasted descriptions or supported posting URLs. Link extraction requires a separately deployed Supabase function; see supabase/EXTRACTION-SETUP.md.

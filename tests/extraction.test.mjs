@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import ts from 'typescript';
 async function moduleUrl(path,replacements={}){let source=await readFile(new URL(path,import.meta.url),'utf8');for(const [from,to] of Object.entries(replacements))source=source.replaceAll(from,to);return 'data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText).toString('base64');}
 const {monthlyNet,netLabel,salarySource,comparableEstimate}=await import(await moduleUrl('../lib/salary.ts'));
-const {extractText,extractStructured}=await import(await moduleUrl('../lib/extraction.ts'));
+const {extractText,extractStructured,postingDate}=await import(await moduleUrl('../lib/extraction.ts'));
 const opportunities=await moduleUrl('../lib/opportunities.ts');
 const {jobSchema}=await import(await moduleUrl('../lib/validation.ts',{"'./opportunities'":JSON.stringify(opportunities),"'zod'":JSON.stringify(import.meta.resolve('zod'))}));
 const salary={source:'Posted',basis:'Gross',min:48000,max:60000,currency:'EUR',period:'Year',deductions:25,evidence:'Example'};
@@ -50,6 +50,8 @@ test('fetch function rejects unapproved URLs and anonymous calls',async()=>{
   globalThis.Deno={env:{get:()=>''}};
   try{const {checkedUrl,publicIPv4,handler}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
   for(const url of ['http://jobs.uzh.ch/x','https://127.0.0.1/','https://jobs.uzh.ch.evil.test','https://user:pass@jobs.uzh.ch/x','https://jobs.uzh.ch:444/x','https://evil.test/'])assert.throws(()=>checkedUrl(url));
+  assert.equal(checkedUrl('https://ai.ethz.ch/research/phd-fellowships.html').hostname,'ai.ethz.ch');
+  assert.throws(()=>checkedUrl('https://ai.ethz.ch.evil.test/'));
   assert.equal(checkedUrl('https://jobs.uzh.ch/posting#x').href,'https://jobs.uzh.ch/posting');
   for(const ip of ['127.0.0.1','10.1.1.1','169.254.169.254','192.168.1.1','172.16.0.1','100.64.0.1','::1'])assert.equal(publicIPv4(ip),false);
   assert.equal(publicIPv4('8.8.8.8'),true);
@@ -68,4 +70,30 @@ test('salary guesses use comparable personal records without mixing currencies o
   assert.equal(comparableEstimate({...target,type:'Industry'},jobs,parse),null);
   assert.equal(extractText('Salary EUR 45k per year').salary,undefined,'unsupported shorthand must not become 45 EUR');
   assert.equal(extractText('Salary EUR 2100,50 per month').salary,undefined,'ambiguous number formats need manual review');
+});
+
+test('prose fellowship posting extracts deadline, institution, flexible start and first-year salary',()=>{
+ const text=`ETH AI Center Doctoral Fellowships The ETH AI Center offers a fellowship for doctoral students.
+The faculty includes researchers at ETH Zurich and collaborating universities.
+We offer positions with flexible start dates, usually in September.
+Transparent salary with automatic advancement. Positions use rate 5 at 100%.
+CHF 73,100 in the first year
+CHF 78,300 in the second year
+CHF 83,500 in the third year.
+Master's degree must be complete by June 2027.
+See application guidelines for required documents.
+Deadline: Tuesday, 27 October 2026 (16:00 CET)`;
+ for(const input of [text,text.replaceAll('\n',' ')]){
+  const r=extractText(input);
+  assert.equal(r.fields.title,'ETH AI Center Doctoral Fellowships');assert.equal(r.fields.organization,'ETH Zurich');assert.equal(r.fields.team,'ETH AI Center');assert.equal(r.fields.location,'Zurich');assert.equal(r.fields.country,'Switzerland');assert.equal(r.fields.type,'PhD');assert.equal(r.fields.deadline,'2026-10-27');assert.match(r.fields.start,/flexible start dates, usually in September/i);
+  assert.equal(r.salary.min,73100);assert.equal(r.salary.max,73100);assert.equal(r.salary.period,'Year');assert.equal(r.salary.basis,'Unknown');assert.match(r.salary.evidence,/78,300/);assert.match(r.salary.evidence,/83,500 \(third year\)/);assert.match(r.fields.notes,/16:00 CET/);assert.deepEqual(r.requirements,[]);assert.ok(r.notices.some(n=>n.includes('inferred')));
+ }
+});
+test('written dates validate calendar days and remain tied to application context',()=>{
+ assert.equal(postingDate('October 27, 2026'),'2026-10-27');assert.equal(postingDate('27th Oct 2026'),'2026-10-27');assert.equal(postingDate('31 February 2026'),'');assert.equal(postingDate('01/02/2026'),'');
+ assert.equal(extractText('Research fellowship\nDegree completed by June 2027\nApplications close 27 October 2026').fields.deadline,'2026-10-27');
+ assert.equal(extractText('Research fellowship\nStart date: 27 October 2026').fields.deadline,undefined);
+ assert.equal(extractText('ETH AI Center Doctoral Fellowships – ETH AI Center | ETH Zurich\nHomepage\nETH AI Center Doctoral Fellowships\nThe ETH AI Center offers a fellowship').fields.title,'ETH AI Center Doctoral Fellowships');
+ assert.equal(extractText('Postdoctoral Fellowship\nCandidates hold a PhD').fields.type,'Postdoc');
+ assert.equal(extractText('Researcher\nSalary: EUR 48,000–EUR 60,000 gross per year').salary.max,60000);
 });

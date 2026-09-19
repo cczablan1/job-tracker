@@ -24,3 +24,9 @@ Extraction is deterministic: JobPosting structured data first, then labelled lin
 Net estimates use a user-entered total employee deduction percentage, not a statutory tax engine. Annual pay is divided by 12; monthly pay supports extra payments and hourly pay requires paid hours/week. Salary guesses use the range of recorded net pay for the same country/type/currency in the user's own tracker. Guessed entries and computed gross-to-net estimates are excluded from that comparison. Existing entries may be unverified; the evidence field states this. No external market-pay data or AI is used.
 
 References: [Supabase dashboard deployment](https://supabase.com/docs/guides/functions/quickstart-dashboard), [Supabase Auth validation](https://supabase.com/docs/reference/javascript/auth-getuser), [EU tax circumstances](https://europa.eu/youreurope/citizens/work/taxes/income-taxes-abroad/faq/index_en.htm).
+
+### Enable ETH on an existing v1.1.0 deployment
+
+Open Edge Functions → Secrets and add `EXTRA_POSTING_HOSTS` with value `ai.ethz.ch,ethz.ch,www.ethz.ch`. If this setting exists, append those hosts instead of removing existing ones. This is a non-sensitive configuration value. Save it; no SQL migration or website key changes are needed. The v1.1.1 function source also includes these defaults for fresh deployments.
+
+The v1.1.1 browser extractor handles written dates and salary progression. It keeps deadline time/timezone in notes because the tracker deadline field is date-only; its urgency badges do not count down to the exact time. An institution-derived location is explicitly marked as inferred. Pasted text does not automatically fetch linked PDF requirements.

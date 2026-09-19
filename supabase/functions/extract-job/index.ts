@@ -1,6 +1,6 @@
 // Deploy as extract-job. This function validates the caller independently of gateway JWT checks.
 // No service-role key, AI key, or database access is used.
-const allowedHosts = ['jobs.uzh.ch','leibniz-zmt.de','www.leibniz-zmt.de','daad.de','www.daad.de','recruitingapp-5442.de.umantis.com','globalsouthopportunities.com','www.globalsouthopportunities.com','linkedin.com','www.linkedin.com','jobs.lever.co','boards.greenhouse.io','job-boards.greenhouse.io',...(Deno.env.get('EXTRA_POSTING_HOSTS')||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)];
+const allowedHosts = ['ai.ethz.ch','ethz.ch','www.ethz.ch','jobs.uzh.ch','leibniz-zmt.de','www.leibniz-zmt.de','daad.de','www.daad.de','recruitingapp-5442.de.umantis.com','globalsouthopportunities.com','www.globalsouthopportunities.com','linkedin.com','www.linkedin.com','jobs.lever.co','boards.greenhouse.io','job-boards.greenhouse.io',...(Deno.env.get('EXTRA_POSTING_HOSTS')||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)];
 const allowedOrigins = ['https://cczablan1.github.io','http://localhost:5173','http://127.0.0.1:5173'];
 const requests = new Map<string,{count:number;until:number}>();
 export function checkedUrl(value:string):URL {
