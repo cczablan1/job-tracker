@@ -51,3 +51,8 @@ Install on iPhone: open the deployed site in Safari, Share → Add to Home Scree
 - No service-role key or personal application fixture belongs in this source tree.
 - Run `supabase/security-check.sql` in a development project after applying the schema. The test rolls back all fixtures.
 - Live authentication, email delivery, and RLS must be verified against your actual project before migration is considered complete.
+## Versions and rollback
+
+Stable releases are tagged as `vMAJOR.MINOR.PATCH` and described in `CHANGELOG.md`.
+
+Before a risky update, create a new version tag. To restore a prior release, create a new branch from its tag, verify it, and then merge or deploy that branch. Avoid deleting or moving old version tags. A local Git bundle backup is also kept outside the public repository for disaster recovery.
