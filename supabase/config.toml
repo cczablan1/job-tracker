@@ -1,0 +1,4 @@
+[functions.extract-job]
+# Supports projects with current asymmetric signing keys. The handler requires
+# a valid user token and verifies it using Supabase Auth before fetching a URL.
+verify_jwt = false

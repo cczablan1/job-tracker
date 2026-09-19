@@ -1,4 +1,7 @@
 'use client';
+import {jobSchema} from '../lib/validation';
+import ExtractJob from './extract-job';
+import SalaryEditor from './salary-editor';
 import {useState} from 'react';
 import {ExternalLink,Save,ArrowRight} from 'lucide-react';
 import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue} from '@/components/ui/select';
@@ -8,18 +11,19 @@ import {Textarea} from '@/components/ui/textarea';
 import {Checkbox} from '@/components/ui/checkbox';
 import {Job,statuses,docNames,documentProgress} from '@/lib/opportunities';
 export function Choice({label,value,values,onChange}:{label:string;value:string;values:readonly string[];onChange:(s:string)=>void}){return <Select value={value} onValueChange={onChange}><SelectTrigger aria-label={label} className="choice"><SelectValue/></SelectTrigger><SelectContent>{values.map(v=><SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select>;}
-export default function Editor({job,isNew,onSave,onDirty}:{job:Job;isNew:boolean;onSave:(j:Job)=>Promise<void>;onDirty:()=>void}){
+export default function Editor({job,jobs,isNew,onSave,onDirty}:{job:Job;jobs:Job[];isNew:boolean;onSave:(j:Job)=>Promise<void>;onDirty:()=>void}){
 const original=documentProgress(job);
 const [draft,setDraft]=useState(job),[busy,setBusy]=useState(false),[error,setError]=useState(''),[step,setStep]=useState(['Submitted','Waiting for Recommendation','Interview','Offer','Rejected','Declined','Withdrawn'].includes(job.status)?'5':original.unchecked?'2':original.done<original.total?'3':'4');
+function replace(next:Job){onDirty();setDraft(next);}
 function change(k:keyof Job,v:string){onDirty();setDraft(d=>({...d,[k]:v}));}
 function doc(name:string,state:Job['docs'][string]){onDirty();setDraft(d=>({...d,docs:{...d.docs,[name]:state}}));}
-async function submit(e:React.FormEvent){e.preventDefault();if(!draft.title.trim()&&!draft.url.trim()){setError('Enter a job title or a posting link.');setStep('1');return;}setBusy(true);setError('');try{await onSave(draft);}catch(e){setError(e instanceof Error?e.message:'Could not save. Please try again.');}finally{setBusy(false);}}
+async function submit(e:React.FormEvent){e.preventDefault();if(!draft.title.trim()&&!draft.url.trim()){setError('Enter a job title or a posting link.');setStep('1');return;}const validated=jobSchema.safeParse(draft);if(!validated.success){setError(validated.error.issues.map(i=>i.path.join('.')+': '+i.message).join('; '));setStep('1');return;}setBusy(true);setError('');try{await onSave(draft);}catch(e){setError(e instanceof Error?e.message:'Could not save. Please try again.');}finally{setBusy(false);}}
 function field(k:keyof Job,label:string,placeholder='',type='text'){return <label className="field" key={k}><span>{label}</span><Input type={type} value={String(draft[k])} placeholder={placeholder} maxLength={k==='url'?4000:500} onChange={e=>change(k,e.target.value)}/></label>;}
 const progress=documentProgress(draft),required=docNames.filter(n=>['Required','In progress','Done'].includes(draft.docs[n]));
 const posting=draft.url&&/^https?:\/\//i.test(draft.url)?<a className="secondary" href={draft.url} target="_blank" rel="noopener noreferrer">Open posting<ExternalLink size={15}/></a>:<p className="form-note">Add a posting link in Details.</p>;
 const notes=<label className="field"><span>Notes</span><Textarea value={draft.notes} maxLength={10000} onChange={e=>change('notes',e.target.value)} placeholder="Requirements, contact details, or follow-up notes"/></label>;
-const core=<>{field('url','Posting link','https://…','url')}{field('title','Job / program title','e.g. PhD in Remote Sensing')}</>;
-const details=<><div className="form-grid">{field('organization','Organization / university')}<label className="field"><span>Type</span><Choice label="Opportunity type" value={draft.type} values={['PhD','Industry','Postdoc','Other']} onChange={v=>change('type',v)}/></label>{field('deadline','Application deadline','','date')}{field('found','Date found','','date')}{field('location','Location')}{field('country','Country')}{field('salary','Net salary','e.g. € 2,100 / month')}{field('start','Start date','YYYY-MM-DD or as advertised')}</div>{field('team','Department, advisor or team')}{notes}</>;
+const core=<>{field('url','Posting link','https://…','url')}<ExtractJob job={draft} onChange={replace}/>{field('title','Job / program title','e.g. PhD in Remote Sensing')}</>;
+const details=<><div className="form-grid">{field('organization','Organization / university')}<label className="field"><span>Type</span><Choice label="Opportunity type" value={draft.type} values={['PhD','Industry','Postdoc','Other']} onChange={v=>change('type',v)}/></label>{field('deadline','Application deadline','','date')}{field('found','Date found','','date')}{field('location','Location')}{field('country','Country')}{field('start','Start date','YYYY-MM-DD or as advertised')}</div>{field('team','Department, advisor or team')}<SalaryEditor job={draft} jobs={jobs} onChange={replace}/>{notes}</>;
 return <form onSubmit={submit} className="edit-form"><fieldset disabled={busy}>
 {isNew?<>{core}<details className="more-details"><summary>Optional details</summary>{details}</details></>:<Tabs value={step} onValueChange={setStep} className="editor-tabs"><TabsList className="step-tabs">{['Details','Requirements','Documents','Apply','Response'].map((name,i)=><TabsTrigger key={name} value={String(i+1)} className="step-tab"><span>{i+1}</span>{name}</TabsTrigger>)}</TabsList>
 <TabsContent value="1"><div className="step-heading"><h3>1. Job details</h3></div>{core}{details}<button type="button" className="next-button" onClick={()=>setStep('2')}>Next: Check requirements<ArrowRight size={15}/></button></TabsContent>

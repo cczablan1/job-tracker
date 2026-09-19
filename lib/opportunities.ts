@@ -2,7 +2,7 @@ export const statuses=['Saved','Preparing','Submitted','Waiting for Recommendati
 export const docNames=['CV','Motivation letter','Transcripts','Reference contacts','Reference letters'] as const;
 export const docStates=['Not checked','Required','In progress','Done','Not required'] as const;
 export type DocState=typeof docStates[number];
-export type Job={id:string;title:string;organization:string;type:string;url:string;team:string;location:string;country:string;found:string;status:typeof statuses[number];deadline:string;applied:string;salary:string;start:string;notes:string;docs:Record<string,DocState>;version:number};
+export type Job={id:string;title:string;organization:string;type:string;url:string;team:string;location:string;country:string;found:string;status:typeof statuses[number];deadline:string;applied:string;salary:string;salaryDetails?:import('./salary').SalaryDetails;start:string;notes:string;docs:Record<string,DocState>;version:number};
 export const blankDocs=():Record<string,DocState>=>Object.fromEntries(docNames.map(n=>[n,'Not checked']));
 export const closed=(j:Job)=>['Rejected','Declined','Withdrawn'].includes(j.status);
 export const needsApplication=(j:Job)=>['Saved','Preparing'].includes(j.status);
