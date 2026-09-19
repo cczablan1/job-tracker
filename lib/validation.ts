@@ -1,0 +1,5 @@
+import {z} from 'zod';
+import {statuses,docStates,docNames} from './opportunities';
+const date=z.string().refine(s=>!s||/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s+'T12:00:00Z'))&&new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s,'Use a valid date');
+const short=z.string().trim().max(500);
+export const jobSchema=z.object({id:z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),title:short,organization:short,type:z.enum(['PhD','Industry','Postdoc','Other']),url:z.string().trim().max(4000).refine(s=>{if(!s)return true;try{return ['http:','https:'].includes(new URL(s).protocol);}catch{return false;}},'Use an http or https link'),team:short,location:short,country:short,found:date,status:z.enum(statuses),deadline:date,applied:date,salary:short,start:short,notes:z.string().max(10000),docs:z.object({'CV':z.enum(docStates),'Motivation letter':z.enum(docStates),'Transcripts':z.enum(docStates),'Reference contacts':z.enum(docStates),'Reference letters':z.enum(docStates)}).strict(),version:z.number().int().min(1)}).strict().refine(j=>Boolean(j.title||j.url),'Add a title or posting link');
