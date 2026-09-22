@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import ts from 'typescript';
 async function moduleUrl(path,replacements={}){let source=await readFile(new URL(path,import.meta.url),'utf8');for(const [from,to] of Object.entries(replacements))source=source.replaceAll(from,to);return 'data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText).toString('base64');}
 const {monthlyNet,netLabel,salarySource,comparableEstimate}=await import(await moduleUrl('../lib/salary.ts'));
-const {extractText,extractStructured,postingDate}=await import(await moduleUrl('../lib/extraction.ts'));
+const {extractText,extractStructured,postingDate,mergeExtraction}=await import(await moduleUrl('../lib/extraction.ts'));
 const opportunities=await moduleUrl('../lib/opportunities.ts');
 const {jobSchema}=await import(await moduleUrl('../lib/validation.ts',{"'./opportunities'":JSON.stringify(opportunities),"'zod'":JSON.stringify(import.meta.resolve('zod'))}));
 const salary={source:'Posted',basis:'Gross',min:48000,max:60000,currency:'EUR',period:'Year',deductions:25,evidence:'Example'};
@@ -45,13 +45,13 @@ test('existing backups remain valid while malformed salary metadata is rejected'
   assert.equal(jobSchema.safeParse({...job,salaryDetails:{...salary,deductions:100}}).success,false);
 });
 test('fetch function rejects unapproved URLs and anonymous calls',async()=>{
-  const source=(await readFile(new URL('../supabase/functions/extract-job/index.ts',import.meta.url),'utf8')).replace('Deno.serve(handler);','');
+  const source=(await readFile(new URL('../supabase/functions/extract-job/index.ts',import.meta.url),'utf8')).replace('Deno.serve(handler);','').replace("'npm:linkedom@0.18.13'",JSON.stringify(import.meta.resolve('linkedom')));
   const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   globalThis.Deno={env:{get:()=>''}};
   try{const {checkedUrl,publicIPv4,handler}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
-  for(const url of ['http://jobs.uzh.ch/x','https://127.0.0.1/','https://jobs.uzh.ch.evil.test','https://user:pass@jobs.uzh.ch/x','https://jobs.uzh.ch:444/x','https://evil.test/'])assert.throws(()=>checkedUrl(url));
+  for(const url of ['http://jobs.uzh.ch/x','https://127.0.0.1/','https://user:pass@jobs.uzh.ch/x','https://jobs.uzh.ch:444/x'])assert.throws(()=>checkedUrl(url));
   assert.equal(checkedUrl('https://ai.ethz.ch/research/phd-fellowships.html').hostname,'ai.ethz.ch');
-  assert.throws(()=>checkedUrl('https://ai.ethz.ch.evil.test/'));
+  assert.equal(checkedUrl('https://careers.some-new-employer.org/position').hostname,'careers.some-new-employer.org');
   assert.equal(checkedUrl('https://jobs.uzh.ch/posting#x').href,'https://jobs.uzh.ch/posting');
   for(const ip of ['127.0.0.1','10.1.1.1','169.254.169.254','192.168.1.1','172.16.0.1','100.64.0.1','::1'])assert.equal(publicIPv4(ip),false);
   assert.equal(publicIPv4('8.8.8.8'),true);
@@ -85,8 +85,8 @@ See application guidelines for required documents.
 Deadline: Tuesday, 27 October 2026 (16:00 CET)`;
  for(const input of [text,text.replaceAll('\n',' ')]){
   const r=extractText(input);
-  assert.equal(r.fields.title,'ETH AI Center Doctoral Fellowships');assert.equal(r.fields.organization,'ETH Zurich');assert.equal(r.fields.team,'ETH AI Center');assert.equal(r.fields.location,'Zurich');assert.equal(r.fields.country,'Switzerland');assert.equal(r.fields.type,'PhD');assert.equal(r.fields.deadline,'2026-10-27');assert.match(r.fields.start,/flexible start dates, usually in September/i);
-  assert.equal(r.salary.min,73100);assert.equal(r.salary.max,73100);assert.equal(r.salary.period,'Year');assert.equal(r.salary.basis,'Unknown');assert.match(r.salary.evidence,/78,300/);assert.match(r.salary.evidence,/83,500 \(third year\)/);assert.match(r.fields.notes,/16:00 CET/);assert.deepEqual(r.requirements,[]);assert.ok(r.notices.some(n=>n.includes('inferred')));
+  assert.equal(r.fields.title,'ETH AI Center Doctoral Fellowships');assert.equal(r.fields.organization,'ETH AI Center');assert.equal(r.fields.location,undefined);assert.equal(r.fields.country,undefined);assert.equal(r.fields.type,'PhD');assert.equal(r.fields.deadline,'2026-10-27');assert.match(r.fields.start,/flexible start dates, usually in September/i);
+  assert.equal(r.salary.min,73100);assert.equal(r.salary.max,73100);assert.equal(r.salary.period,'Year');assert.equal(r.salary.basis,'Unknown');assert.match(r.salary.evidence,/78,300/);assert.match(r.salary.evidence,/83,500 \(third year\)/);assert.match(r.fields.notes,/16:00 CET/);assert.deepEqual(r.requirements,[]);assert.ok(r.notices.some(n=>n.includes('hiring sentence')));
  }
 });
 test('written dates validate calendar days and remain tied to application context',()=>{
@@ -96,4 +96,17 @@ test('written dates validate calendar days and remain tied to application contex
  assert.equal(extractText('ETH AI Center Doctoral Fellowships – ETH AI Center | ETH Zurich\nHomepage\nETH AI Center Doctoral Fellowships\nThe ETH AI Center offers a fellowship').fields.title,'ETH AI Center Doctoral Fellowships');
  assert.equal(extractText('Postdoctoral Fellowship\nCandidates hold a PhD').fields.type,'Postdoc');
  assert.equal(extractText('Researcher\nSalary: EUR 48,000–EUR 60,000 gross per year').salary.max,60000);
+});
+
+test('unrelated employer prose, table labels and industry roles use general rules',()=>{
+ const a=extractText('Data Engineer\nAcme Labs is hiring a Data Engineer.\nLocation: Madrid, Spain\nClosing date: November 4, 2026\nA PhD is optional.\nSalary: EUR 50000 gross per year');
+ assert.equal(a.fields.organization,'Acme Labs');assert.equal(a.fields.country,'Spain');assert.equal(a.fields.type,'Industry');assert.equal(a.fields.deadline,'2026-11-04');
+ const b=extractText('Marine Research Fellow\nOrganization\nCoastal Institute\nCountry\nNorway\nApplication deadline\n1 December 2026');
+ assert.equal(b.fields.organization,'Coastal Institute');assert.equal(b.fields.country,'Norway');assert.equal(b.fields.deadline,'2026-12-01');
+});
+test('multiple postings are not combined and metadata remains authoritative over AI',()=>{
+ const jobs=[{'@type':'JobPosting',title:'Role A',hiringOrganization:{name:'One'}},{'@type':'JobPosting',title:'Role B',hiringOrganization:{name:'Two'}}];
+ const multiple=extractStructured(jobs,'Salary: EUR 30000 per year');assert.equal(multiple.ambiguous,true);assert.deepEqual(mergeExtraction(multiple,{fields:{title:'Guessed'},requirements:[]}).fields,{});
+ const base=extractStructured(jobs[0],'Organization: Wrong');const ai={fields:{title:'Different title',country:'France'},evidence:{title:'Different title',country:'Based in France'},requirements:['CV'],notices:['Check quotes']};
+ const merged=mergeExtraction(base,ai);assert.equal(merged.fields.title,'Role A');assert.equal(merged.fields.country,'France');assert.equal(merged.evidence.country,'Based in France');assert.deepEqual(merged.requirements,['CV']);
 });

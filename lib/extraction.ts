@@ -1,5 +1,5 @@
 import type {SalaryDetails} from './salary';
-export type Extracted = {fields:Partial<Record<'title'|'organization'|'location'|'country'|'deadline'|'start'|'team'|'type'|'notes',string>>;salary?:SalaryDetails;requirements:string[];notices?:string[]};
+export type Extracted = {fields:Partial<Record<'title'|'organization'|'location'|'country'|'deadline'|'start'|'team'|'type'|'notes',string>>;salary?:SalaryDetails;requirements:string[];notices?:string[];evidence?:Record<string,string>;structuredFields?:string[];structuredSalary?:boolean;ambiguous?:boolean};
 const clean=(v:unknown)=>typeof v==='string'?v.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,500):'';
 const iso=(v:unknown)=>{const s=clean(v).slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s?s:'';};
 const months=['january','february','march','april','may','june','july','august','september','october','november','december'];
@@ -21,26 +21,23 @@ export function extractText(input:string):Extracted {
   const text=input.slice(0,80000).replace(/\u00a0/g,' ');
   const lines=text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
   const result:Extracted={fields:{},requirements:[],notices:[]};const notes:string[]=[];
-  const labels:Record<string, keyof Extracted['fields']>={'title':'title','position':'title','job title':'title','organization':'organization','organisation':'organization','university':'organization','company':'organization','location':'location','country':'country','department':'team','team':'team','advisor':'team','deadline':'deadline','application deadline':'deadline','start date':'start'};
-  for(const line of lines){const m=line.match(/^([^:]{2,30}):\s*(.+)$/);if(m&&labels[m[1].toLowerCase()]){const k=labels[m[1].toLowerCase()];const value=k==='deadline'?postingDate(m[2]):clean(m[2]);if(value)result.fields[k]=value;}}
+  const labels:Record<string, keyof Extracted['fields']>={'title':'title','position':'title','job title':'title','organization':'organization','organisation':'organization','university':'organization','company':'organization','employer':'organization','hiring organization':'organization','location':'location','country':'country','department':'team','team':'team','advisor':'team','deadline':'deadline','application deadline':'deadline','closing date':'deadline','apply by':'deadline','start date':'start'};
+  const labelled=lines.map((line,i)=>labels[line.replace(/:$/, '').toLowerCase()]&&lines[i+1]?line.replace(/:$/, '')+': '+lines[i+1]:line);
+  for(const line of labelled){const m=line.match(/^([^:]{2,30}):\s*(.+)$/);if(m&&labels[m[1].toLowerCase()]){const k=labels[m[1].toLowerCase()];const value=k==='deadline'?postingDate(m[2]):clean(m[2]);if(value)result.fields[k]=value;}}
   if(!result.fields.title)result.fields.title=titleFrom(lines);
   if(!result.fields.title)delete result.fields.title;
   // Locate dates in application-related context, never degree-completion or start dates.
-  const deadline=text.match(/(?:application\s+deadline|deadline(?:\s+for\s+applications)?|applications?\s+(?:close|must\s+be\s+(?:received|submitted)\s+by)|apply\s+by)\s*[:–-]?\s*([^\n]{1,160})/i);
+  const deadline=text.match(/(?:closing\s+date|application\s+deadline|deadline(?:\s+for\s+applications)?|applications?\s+(?:close|must\s+be\s+(?:received|submitted)\s+by)|apply\s+by)\s*[:–-]?\s*([^\n]{1,160})/i);
   if(deadline){const date=postingDate(deadline[1]);if(date){result.fields.deadline=date;notes.push('Deadline as posted: '+clean(deadline[0]));}}
   const role=result.fields.title||'';
-  if(/\bpostdoc(?:toral)?\b/i.test(role))result.fields.type='Postdoc';else if(/\b(ph\.?d|doctoral)\b/i.test(role+' '+text))result.fields.type='PhD';
-  // Named institution recognition is separate from the extraction of advertised facts.
-  // Do not confuse collaborating universities later in a description with the employer.
-  if(/\bETH (?:AI Center|Zurich|Zürich)\b/i.test(role)){
-    result.fields.organization ||= 'ETH Zurich';
-    if(/\bETH AI Center\b/i.test(role))result.fields.team ||= 'ETH AI Center';
-    result.fields.location ||= 'Zurich';result.fields.country ||= 'Switzerland';
-    result.notices!.push('Organization and location inferred from the named ETH institution; verify the work location.');
-  }else if(!result.fields.organization){
-    const employer=text.match(/(?:^|\n)([A-Z][^\n.!?]{2,100}?(?:University|Institute|Laboratory|College|Company))\s+(?:is\s+(?:seeking|recruiting)|invites|offers)/);
-    if(employer)result.fields.organization=clean(employer[1]);
+  if(/\bpostdoc(?:toral)?\b/i.test(role))result.fields.type='Postdoc';else if(/\b(ph\.?d|doctoral)\b/i.test(role))result.fields.type='PhD';else if(/\b(engineer|developer|analyst|manager|designer|scientist)\b/i.test(role))result.fields.type='Industry';
+  // Identify the employer from hiring language, without any institution lookup table.
+  if(!result.fields.organization){
+    const employer=text.match(/(?:\bThe\s+|^|[.!?\n]\s*)([A-Z][\p{L}\d&'. -]{1,90}?)\s+(?:is\s+(?:hiring|recruiting|seeking)|offers?(?:\s+a|\s+an|\s+the)|invites\s+applications)/u);
+    if(employer){const name=clean(employer[1].split(/\s+The\s+/).at(-1)).replace(/^The\s+/,'');if(!/\b(?:you|we|fellowships? The)\b/.test(name)){result.fields.organization=name;result.notices!.push('Employer identified from the hiring sentence; verify before saving.');}}
   }
+  const workplace=text.match(/(?:based\s+in|work\s+location\s*:?|location\s*:|located\s+in)\s*([\p{L} .'-]{2,60}),\s*([\p{L} .'-]{2,50})(?=[.\n]|$)/iu);
+  if(workplace){result.fields.location ||= clean(workplace[1]);result.fields.country ||= clean(workplace[2]);}
   if(!result.fields.start){const flexible=text.match(/flexible\s+start\s+dates?[^.\n]{0,100}/i);if(flexible)result.fields.start=clean(flexible[0]);else{const start=text.match(/(?:expected\s+start(?:\s+date)?|starting\s+date|start\s+date)\s*[:–-]?\s*([^\n.]{1,100})/i);if(start)result.fields.start=postingDate(start[1])||clean(start[1]);}}
   // Salary amounts often appear on lines AFTER the salary heading. Parse each
   // pay line rather than assuming the heading itself contains an amount.
@@ -68,16 +65,37 @@ export function extractText(input:string):Extracted {
 export function extractStructured(input:unknown, fallbackText=''):Extracted {
   const result=extractText(fallbackText);
   const find=(x:unknown,depth=0):Record<string,any>|undefined=>{if(depth>12||!x||typeof x!=='object')return;const o=x as Record<string,any>;if([o['@type']].flat().includes('JobPosting'))return o;for(const item of Array.isArray(x)?x:Object.values(o)){const found=find(item,depth+1);if(found)return found;}};
-  const j=find(input);if(!j)return result;
+  const all:Record<string,any>[]=[];const visit=(x:unknown,depth=0)=>{if(depth>12||!x||typeof x!=='object')return;const o=x as Record<string,any>;if([o['@type']].flat().some(t=>t==='JobPosting'||t==='https://schema.org/JobPosting'))all.push(o);for(const v of Array.isArray(x)?x:Object.values(o))visit(v,depth+1);};visit(input);
+  const unique=[...new Map(all.map(j=>[JSON.stringify([j.title,j.hiringOrganization?.name,j.jobLocation,j.url]),j])).values()];
+  if(unique.length>1)return {fields:{},requirements:[],ambiguous:true,notices:['This page contains several job postings. Open one specific position or paste only its description.']};
+  const j=unique[0]||find(input);if(!j)return result;
   const location=[j.jobLocation].flat()[0]?.address;
   const values={title:clean(j.title),organization:clean(j.hiringOrganization?.name),location:clean(location?.addressLocality),country:clean(location?.addressCountry?.name||location?.addressCountry),deadline:iso(j.validThrough),start:iso(j.jobStartDate)};
+  result.structuredFields=Object.entries(values).filter(([,v])=>v).map(([k])=>k);
   Object.assign(result.fields,Object.fromEntries(Object.entries(values).filter(([,v])=>v)));
   const d=extractText(typeof j.description==='string'?j.description.replace(/<[^>]*>/g,'\n').slice(0,80000):'');result.requirements=[...new Set([...result.requirements,...d.requirements])];
-  if(!result.fields.type&&d.fields.type)result.fields.type=d.fields.type;
+  for(const [key,value] of Object.entries(d.fields))if(!result.fields[key as keyof Extracted['fields']])result.fields[key as keyof Extracted['fields']]=value;
+  if(j.employmentUnit?.name)result.fields.team=clean(j.employmentUnit.name);
+  if(j.jobLocationType==='TELECOMMUTE')result.fields.location='Remote';
   if(!result.salary&&d.salary)result.salary=d.salary;
   const salary=j.baseSalary,amount=salary?.value;
   const unit=({YEAR:'Year',MONTH:'Month',WEEK:'Week',HOUR:'Hour'} as const)[String(amount?.unitText).toUpperCase() as 'YEAR'];
   const min=Number(amount?.minValue??amount?.value),max=Number(amount?.maxValue??amount?.value??amount?.minValue);
-  if(unit&&min>0&&Number.isFinite(max)&&max>=min&&max<=100000000&&/^[A-Z]{3}$/.test(salary?.currency))result.salary={source:'Posted',basis:'Gross',min,max,currency:salary.currency,period:unit,evidence:'Posting structured data: baseSalary (treated as gross; verify with employer).'};
+  if(unit&&min>0&&Number.isFinite(max)&&max>=min&&max<=100000000&&/^[A-Z]{3}$/.test(salary?.currency)){result.structuredSalary=true;result.salary={source:'Posted',basis:'Gross',min,max,currency:salary.currency,period:unit,evidence:'Posting structured data: baseSalary (treated as gross; verify with employer).'};}
   return result;
+}
+
+export function mergeExtraction(base:Extracted,ai?:Extracted,notice?:string):Extracted {
+  if(base.ambiguous)return base;
+  const result:Extracted={...base,fields:{...base.fields},requirements:[...base.requirements],notices:[...(base.notices||[])],evidence:{}};
+  if(notice)result.notices!.push(notice);
+  if(!ai)return result;
+  for(const [key,value] of Object.entries(ai.fields||{})){
+    if(!['title','organization','location','country','deadline','start','team','type','notes'].includes(key)||typeof value!=='string'||!value||base.structuredFields?.includes(key))continue;
+    if(key==='notes'&&result.fields.notes)result.fields.notes+='\n'+value;else result.fields[key as keyof Extracted['fields']]=value;
+    if(ai.evidence?.[key])result.evidence![key]=ai.evidence[key];
+  }
+  for(const name of ai.requirements||[])if(['CV','Motivation letter','Transcripts','Reference contacts','Reference letters'].includes(name)){if(!result.requirements.includes(name))result.requirements.push(name);if(ai.evidence?.['doc:'+name])result.evidence!['doc:'+name]=ai.evidence['doc:'+name];}
+  if(ai.salary&&!base.structuredSalary)result.salary=ai.salary;
+  result.notices!.push(...(ai.notices||[]));return result;
 }

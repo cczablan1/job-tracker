@@ -1,32 +1,35 @@
-# Enable posting-link extraction
+# Extraction setup (v1.2.0)
 
-Pasted-text extraction and salary calculations work in the browser immediately.
-Link extraction needs the `extract-job` Edge Function in the same Supabase project.
-No database migration or paid AI service is needed. Do not rerun schema.sql.
+The website update and the Supabase function are separate deployments. No SQL or database migration is needed.
 
-1. Open your Supabase dashboard → Edge Functions → Deploy a new function → Via Editor.
-2. Name the function `extract-job` and replace index.ts with the complete contents of `functions/extract-job/index.ts` in this folder.
-3. Deploy. In the function settings, disable the legacy gateway “Verify JWT” option. The function itself verifies the user's access token with Supabase Auth before fetching anything. Anonymous requests remain rejected.
-4. Sign in to Job Tracker, add a supported HTTPS posting URL, and select **Extract from link**. Review the fields before using them and saving.
+## 1. Update the existing function
 
-Alternatively, after signing in with the Supabase CLI:
+1. In Supabase open **Edge Functions → extract-job → Code**.
+2. Replace all of index.ts with this repository's `supabase/functions/extract-job/index.ts`.
+3. Click **Deploy updates** and wait for success.
+4. Keep **Verify JWT with legacy secret** off. The handler validates the signed-in user's access token with Supabase Auth before any fetching or AI call.
 
-```sh
-supabase functions deploy extract-job --project-ref YOUR_PROJECT_REF
-```
+Fresh projects: Edge Functions → Deploy a new function → Via Editor, name it `extract-job`, paste the same code and deploy.
 
-The built-in `SUPABASE_URL` and `SUPABASE_ANON_KEY` environment variables are supplied by Supabase. Do not add a service-role key or private credentials to the website or repository.
+The source is a single file, including its pinned npm HTML parser import. Supabase bundles the dependency during deployment. Do not omit the import.
 
-Only explicitly approved hostnames are fetched, including the original posting hosts, Lever, Greenhouse and LinkedIn. Some sites, particularly LinkedIn, block automated access. Use pasted text for those. To support another trusted site, set the function's `EXTRA_POSTING_HOSTS` environment variable to comma-separated exact hostnames. Only add known public posting sites, including any legitimate redirect destination; do not add user-controlled proxies. Every redirect is checked. HTTPS, DNS checks, byte limits and timeouts apply. The per-user rate limit is best-effort per running function instance, not a global quota.
+## 2. Optional free-tier AI
 
-Extraction is deterministic: JobPosting structured data first, then labelled lines and conservative text patterns. It cannot fill information absent from the posting. Document matches need manual confirmation. Unknown salary gross/net basis is never silently converted.
+1. Create an account at https://console.groq.com and stay on the **Free** plan. Do not enable paid billing if you want zero AI charges.
+2. Create an API key at https://console.groq.com/keys.
+3. In Supabase **Edge Functions → Secrets**, add `GROQ_API_KEY` with the key as its value, then Save. Never put this key into GitHub, frontend environment variables, or chat.
+4. In the tracker, check **Use AI to help extract details (Groq)** before extracting a link or pasted description.
 
-Net estimates use a user-entered total employee deduction percentage, not a statutory tax engine. Annual pay is divided by 12; monthly pay supports extra payments and hourly pay requires paid hours/week. Salary guesses use the range of recorded net pay for the same country/type/currency in the user's own tracker. Guessed entries and computed gross-to-net estimates are excluded from that comparison. Existing entries may be unverified; the evidence field states this. No external market-pay data or AI is used.
+The integration uses `openai/gpt-oss-20b` on Groq, not the OpenAI API. No ChatGPT subscription or OpenAI API key is used. The app cannot determine the billing plan of your key: if you upgrade your Groq account, Groq may bill requests. There is no paid-provider fallback or automatic retry.
 
-References: [Supabase dashboard deployment](https://supabase.com/docs/guides/functions/quickstart-dashboard), [Supabase Auth validation](https://supabase.com/docs/reference/javascript/auth-getuser), [EU tax circumstances](https://europa.eu/youreurope/citizens/work/taxes/income-taxes-abroad/faq/index_en.htm).
+Only the posting text, limited to its first 20,000 characters, is sent to Groq. It receives no tracker records, email address, login token or documents. The service returns suggestions with quotes; these require review. Quotes are checked against the input, but that cannot prove every interpretation is correct. Missing keys, quotas or invalid responses fall back to metadata/text extraction. With AI unchecked, pasted text stays on your device.
 
-### Enable ETH on an existing v1.1.0 deployment
+## What general-site support means
 
-Open Edge Functions → Secrets and add `EXTRA_POSTING_HOSTS` with value `ai.ethz.ch,ethz.ch,www.ethz.ch`. If this setting exists, append those hosts instead of removing existing ones. This is a non-sensitive configuration value. Save it; no SQL migration or website key changes are needed. The v1.1.1 function source also includes these defaults for fresh deployments.
+No employer enable list is used. The old `EXTRA_POSTING_HOSTS` setting can be left alone; this version ignores it. HTTPS links must resolve to public IPv4 addresses. Every redirect is independently checked and connections are pinned to the checked IP while TLS verifies the original hostname. Local/private addresses, custom ports, oversized responses, invalid framing and long-running requests are rejected. No credentials are forwarded to posting sites.
 
-The v1.1.1 browser extractor handles written dates and salary progression. It keeps deadline time/timezone in notes because the tracker deadline field is date-only; its urgency badges do not count down to the exact time. An institution-derived location is explicitly marked as inferred. Pasted text does not automatically fetch linked PDF requirements.
+The function reads HTML; it does not log in, solve CAPTCHAs, run page scripts, or follow PDF guidelines. Blocked, PDF and JavaScript-only pages need pasted text. IPv6-only sites are not supported. Per-user throttling is best-effort per function instance, not a durable global quota.
+
+Metadata extraction supports JSON-LD JobPosting and microdata. The ordinary prose parser recognizes common English labels, dates and salary patterns; it is not a general language model. Missing facts remain blank. Salary progression selects first-year pay and records later years in notes. Gross/net is left unknown unless supported. The date-only tracker preserves an advertised deadline time/timezone in notes; urgency badges do not count down to that exact time.
+
+References: https://supabase.com/docs/guides/functions/quickstart-dashboard, https://console.groq.com/docs/structured-outputs, https://console.groq.com/docs/rate-limits, https://console.groq.com/docs/billing-faqs.

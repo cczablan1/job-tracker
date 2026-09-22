@@ -2,6 +2,15 @@
 
 This project uses version tags so a known working release can be restored if a later change causes a problem.
 
+## 1.2.0 — 2026-09-22
+
+- Replace the per-employer allowlist with public HTTPS address validation, DNS-pinned connections and checked redirects.
+- Read page headings, tables, definition lists, JSON-LD and microdata; remove institution-specific extraction rules.
+- Add explicitly opt-in Groq AI extraction for links and pasted descriptions, with source quotes and ordinary-parser fallback. A separately configured Groq key is required; stay on Groq's Free plan to avoid provider charges.
+- Keep account records out of AI requests; validate returned fields and preserve stronger structured metadata.
+- Reject ambiguous pages with multiple job postings rather than combine unrelated details.
+- The updated Supabase function must be redeployed. EXTRA_POSTING_HOSTS is no longer used.
+
 ## 1.1.1 — 2026-09-19
 
 - Parse written-out application deadlines and preserve the advertised time/timezone in notes.

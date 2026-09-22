@@ -59,8 +59,10 @@ Before a risky update, create a new version tag. To restore a prior release, cre
 
 ## Posting extraction and net salary
 
-In Save job, paste a posting URL and select **Extract from link**, or choose **Paste description instead**. Review the suggested fields before adding them. Existing fields are unchecked; saved document progress is preserved. Link extraction supports approved posting hosts and needs the setup in [supabase/EXTRACTION-SETUP.md](supabase/EXTRACTION-SETUP.md). Pasted text stays on the device.
+In Save job, paste a posting URL and select **Extract from link**, or choose **Paste description instead**. Review the suggested fields before adding them. Existing fields are unchecked; saved document progress is preserved. Link extraction supports public HTTPS posting hosts and needs the setup in [supabase/EXTRACTION-SETUP.md](supabase/EXTRACTION-SETUP.md). Pasted text stays on the device unless you explicitly enable the optional Groq AI checkbox.
 
 Under Optional details → Net salary, record posted net pay, compute approximate net using an explicit total deduction percentage, or estimate from similar jobs already in your tracker. A source column distinguishes posted net, posted gross with estimated net, guessed net and older entries with no recorded source. Missing information remains unknown. These are reviewable planning estimates, not a country-specific tax calculation.
 
 Version 1.0.0 remains available for code rollback. Version 1.1.0 adds optional salary metadata to existing JSON records without changing the database schema. If rolling back to 1.0.0, export account data first: old validation does not accept this new metadata when editing affected records. A code rollback does not restore or delete database data.
+
+Version 1.2.0 removes per-employer host settings and adds optional free-tier Groq AI. Update the existing Supabase function and optionally set GROQ_API_KEY following [extraction setup](supabase/EXTRACTION-SETUP.md). AI requests never include stored tracker records. Keep the provider account on its Free plan; the app cannot enforce a provider billing plan.
